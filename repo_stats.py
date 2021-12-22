@@ -1,24 +1,21 @@
 import csv
-import json
-import multiprocessing
+import logging
 import os
-import re
-from typing import List, Dict
-
-from logger import sys
 import time
-from collections import Counter
-from itertools import zip_longest
 from os import path
 import optparse
+
 import toml
 from github import Github
 from joblib import Parallel, delayed
-from gitTokenHelper import GithubPersonalAccessTokenHelper
-from config import get_pats, remove_chain_from_config
 import requests
-import datetime
 
+from logger import sys
+from gitTokenHelper import GithubPersonalAccessTokenHelper
+from config import get_pats
+
+
+LOGGER = logging.getLogger(__file__)
 dir_path = path.dirname(path.realpath(__file__))
 
 
@@ -50,7 +47,6 @@ class RepoStats:
             org = org_url.split("https://github.com/")[1]
             print("Fetching repo data for", org)
             org_repo_data_list = self._get_repo_data_for_org(org, year_count)
-            print("Fetching stats(stargazers, forks, releases, churn_4w) for", org_url)
 
     # list all the repos of a github org/user
     # Ensure chain_name is same as name of toml file
@@ -102,21 +98,22 @@ class RepoStats:
         number_of_hyperthreads = 1
         n_jobs = 2 if number_of_hyperthreads > 2 else number_of_hyperthreads
         print("Fetching single repo data ...")
-        repo_data_list = Parallel(n_jobs=n_jobs)(delayed(
+        repo_data_lists = Parallel(n_jobs=n_jobs)(delayed(
             self._get_single_repo_data_from_api)(org_name, repo, year_count) for repo in unforked_repos)
 
         path = os.path.abspath("./output/" + org_name + "_single_repo_stats.csv")
 
-        with open(path, 'w') as single_repo_data:
-            writer = csv.writer(single_repo_data)
-            writer.writerows(repo_data_list)
-
-        return repo_data_list
+        with open(path, 'w+') as single_repo_data:
+            writer = csv.DictWriter(single_repo_data, fieldnames=[
+                'org', 'repo', 'contributor_login', 'contributor_id', 'start_date', 'additions',
+                'deletions', 'commits'])
+            for repo_data in repo_data_lists:
+                writer.writerows(repo_data)
 
     # Stats
     # get repo data using a repo URL in the form of `org/repo`
     def _get_single_repo_data_from_api(self, org: str, org_then_slash_then_repo: str, year_count: int = 1):
-        print('Fetching repo data for ', )
+        print('Fetching repo data for ', org_then_slash_then_repo)
         data = []
         try:
             repo = self.gh.get_repo(org_then_slash_then_repo)
@@ -127,19 +124,19 @@ class RepoStats:
                         'repo': org_then_slash_then_repo.split("/")[1],
                         'contributor_login': contributor.author.login,
                         'contributor_id': contributor.author.id,
-                        'start_date': datetime.datetime.fromtimestamp(week.w).strftime(
-                            '%Y-%m-%dT%H:%M:%S%zZ'),
+                        'start_date': week.w.strftime('%Y-%m-%dT%H:%M:%S%zZ'),
                         'additions': week.a,
                         'deletions': week.d,
                         'commits': week.c
                     })
             return data
+
         except Exception as e:
-            if e.status == 403:
-                print("Token rate limit reached, switching tokens")
-                PAT = self._get_access_token()
-                self.gh = Github(PAT)
-                return self._get_single_repo_data_from_api(org, org_then_slash_then_repo, year_count)
+            LOGGER.exception(e)
+            print("Token rate limit reached, switching tokens")
+            PAT = self._get_access_token()
+            self.gh = Github(PAT)
+            return self._get_single_repo_data_from_api(org, org_then_slash_then_repo, year_count)
             raise e
 
 
@@ -155,6 +152,7 @@ if __name__ == '__main__':
     years_count = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
     do = RepoStats('./output', options.frequency)
-    do.get_and_save_full_stats(sys.argv[1], years_count)
+    # do.get_and_save_full_stats(sys.argv[1], years_count)
+    do.get_and_save_full_stats('algorand', years_count)
 
 

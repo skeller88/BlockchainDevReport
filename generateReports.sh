@@ -3,11 +3,11 @@ names=$(awk -F "=" '/names/ {print $2}' config.ini)
 
 rm logfile.log
 
-echo "Generating reports ..."
+#echo "Generating reports ..."
 
 # python3 updateProtocols.py
 
-echo "Running dev.py ..."
+#echo "Running dev.py ..."
 #for name in $names; do
 #    python dev.py $name
 #done
@@ -21,5 +21,5 @@ for name in $names; do
     python repo_stats.py $name 1
 done
 
-echo "Running visualizer ..."
-python vis.py
+#echo "Running visualizer ..."
+#python vis.py
