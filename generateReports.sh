@@ -18,7 +18,7 @@ rm logfile.log
 #done
 
 for name in $names; do
-    python repo_stats.py $name 1
+    python get_repo_stats.py $name 1
 done
 
 #echo "Running visualizer ..."
