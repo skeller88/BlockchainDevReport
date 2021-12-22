@@ -3,6 +3,7 @@
 import asyncio
 import datetime as dt
 import json
+import time
 from os import path, remove
 import re
 from logger import sys
@@ -47,21 +48,28 @@ async def get_commits(session, pat, org_then_slash_then_repo, page):
 
 # Python client only allows the first 100 contributors to be returned, so use vanilla HTTP to get contributors
 class Contributors:
-
     def __init__(self, save_path: str):
         self.save_path = save_path
         # TODO: fix this to be an array
         self.gh_pat_helper = GithubPersonalAccessTokenHelper(get_pats())
+        self.pat = self._get_access_token()
+
+    def _get_access_token(self):
+        res = self.gh_pat_helper.get_access_token()
+        if "token" in res and res["token"] is not None:
+            return res["token"]
+        print('Going to sleep since no token exists with usable rate limit')
+        time.sleep(res["sleep_time_secs"])
+        return self._get_access_token()
 
     # list all the repos of a protocol from toml
     # Includes all the core github org/user repos and the repo urls listed in toml
     # Ensure protocol is same as name of toml file
     async def get_repos_for_protocol_from_toml(self, protocol):
-        pat = await self._get_access_token()
         repos = set()
         toml_file_path = path.join(dir_path, 'protocols', protocol + '.toml')
         if not path.exists(toml_file_path):
-            print(".toml file not found for %s in /protocols folder" % chain_name)
+            print(".toml file not found for %s in /protocols folder" % protocol)
             sys.exit(1)
         try:
             with open(toml_file_path, 'r') as f:
@@ -82,27 +90,27 @@ class Contributors:
                 page = 1
                 url = f"https://api.github.com/orgs/{org_name}/repos?page={page}&per_page=100"
                 response = requests.get(
-                    url, headers={'Authorization': 'Token ' + pat})
+                    url, headers={'Authorization': 'Token ' + self.pat})
                 while len(response.json()) > 0:
                     for repo in response.json():
                         all_org_repos.append(repo["full_name"])
                     page += 1
                     url = f"https://api.github.com/orgs/{org_name}/repos?page={page}&per_page=100"
                     response = requests.get(
-                        url, headers={'Authorization': 'Token ' + pat})
+                        url, headers={'Authorization': 'Token ' + self.pat})
                 # Get forked repos
                 forked_org_repos = []
                 page = 1
                 url = f"https://api.github.com/orgs/{org_name}/repos?type=forks&page={page}&per_page=100"
                 response = requests.get(
-                    url, headers={'Authorization': 'Token ' + pat})
+                    url, headers={'Authorization': 'Token ' + self.pat})
                 while len(response.json()) > 0:
                     for repo in response.json():
                         forked_org_repos.append(repo["full_name"])
                     page += 1
                     url = f"https://api.github.com/orgs/{org_name}/repos?type=forks&page={page}&per_page=100"
                     response = requests.get(
-                        url, headers={'Authorization': 'Token ' + pat})
+                        url, headers={'Authorization': 'Token ' + self.pat})
                 # Find difference
                 unforked_repos = list(
                     set(all_org_repos) - set(forked_org_repos))
@@ -113,28 +121,17 @@ class Contributors:
                 # Get repos of user
                 url = f"https://api.github.com/users/{org_name}/repos"
                 response = requests.get(
-                    url, headers={'Authorization': 'Token ' + pat})
+                    url, headers={'Authorization': 'Token ' + self.pat})
                 for repo in response.json():
                     repos.add(repo["full_name"].lower())
         return list(repos)
-
-    async def _get_access_token(self):
-        res = self.gh_pat_helper.get_access_token()
-        if "token" in res and res["token"] is not None:
-            return res["token"]
-        print('Going to sleep since no token exists with usable rate limit')
-        await asyncio.sleep(res["sleep_time_secs"])
-        return await self._get_access_token()
 
     async def get_contributors_of_repo_in_last_n_years(self, org_then_slash_then_repo: str, n_years: int = 1):
         # Commits are not chronological, so need to pull all and filter
         commits = []
 
-        # get personal access token
-        pat = await self._get_access_token()
-
         async with ClientSession() as session:
-            initial_request = await get_commits(session, pat, org_then_slash_then_repo, page=1)
+            initial_request = await get_commits(session, self.pat, org_then_slash_then_repo, page=1)
             # Repo doesn't exist
             if initial_request["error"] or (type(initial_request["data"]) == dict and initial_request["data"].message == 'Not Found'):
                 return []
@@ -162,7 +159,7 @@ class Contributors:
                 for page in range(batch_start, batch_end + 1):
                     task = ensure_future(
                         get_commits(
-                            session, pat, org_then_slash_then_repo, page)
+                            session, self.pat, org_then_slash_then_repo, page)
                     )
                     tasks.append(task)
 
@@ -191,7 +188,7 @@ class Contributors:
 
                 if rate_limit_exceeded:
                     print("Hourly rate limit exceeded for current token")
-                    pat = await self._get_access_token()
+                    self._get_access_token()
 
                 print("Successful reqs: ", successful_responses_count)
                 remaining_requests_to_be_made -= successful_responses_count
@@ -221,9 +218,6 @@ class Contributors:
         # Commits are not chronological, so need to pull all and filter
         commits = []
 
-        # get personal access token
-        pat = await self._get_access_token()
-
         month_count_plus_one = 12 * n_years + 1
         # create empty 2D list of (12 * n_years) empty list elements)
         # explicity append rather than []*12 as this uses same memory ref, thus append to one element means append to all
@@ -232,7 +226,7 @@ class Contributors:
             contributors.append([])
 
         async with ClientSession() as session:
-            initial_request = await get_commits(session, pat, org_then_slash_then_repo, page=1)
+            initial_request = await get_commits(session, self.pat, org_then_slash_then_repo, page=1)
             # Repo doesn't exist
             if initial_request["error"] or (type(initial_request["data"]) == dict and initial_request["data"].message == 'Not Found'):
                 return contributors
@@ -260,7 +254,7 @@ class Contributors:
                 for page in range(batch_start, batch_end + 1):
                     task = ensure_future(
                         get_commits(
-                            session, pat, org_then_slash_then_repo, page)
+                            session, self.pat, org_then_slash_then_repo, page)
                     )
                     tasks.append(task)
 
@@ -289,7 +283,7 @@ class Contributors:
 
                 if rate_limit_exceeded:
                     print("Hourly rate limit exceeded for current token")
-                    pat = await self._get_access_token()
+                    self._get_access_token()
 
                 print("Successful reqs: ", successful_responses_count)
                 remaining_requests_to_be_made -= successful_responses_count

@@ -2,6 +2,8 @@ import json
 import multiprocessing
 import os
 import re
+from typing import List, Dict
+
 from logger import sys
 import time
 from collections import Counter
@@ -74,7 +76,6 @@ __main__ -> get_and_save_full_stats -> _read_orgs_for_chain_from_toml -> for eac
 
 
 class DevOracle:
-
     def __init__(self, save_path: str, frequency):
         self.save_path = save_path
         self.gh_pat_helper = GithubPersonalAccessTokenHelper(get_pats())
@@ -204,8 +205,11 @@ class DevOracle:
             weekly_commits = self._get_weekly_commits(
                 self.PAT, org_then_slash_then_repo, year_count)
             # TODO: Remove contributor specific code
-            weekly_add_del = [{"additions": code_freq_obj._rawData[1],
-                               "deletions": code_freq_obj._rawData[2]} for code_freq_obj in weekly_add_del]
+            weekly_add_del = [{
+                'start_date': datetime.datetime.fromtimestamp(code_freq_obj._rawData[0]).strftime(
+                    '%Y-%m-%dT%H:%M:%S%zZ'),
+                "additions": code_freq_obj._rawData[1],
+                "deletions": code_freq_obj._rawData[2]} for code_freq_obj in weekly_add_del]
             contributors = [
                 contributor.author.login for contributor in repo.get_stats_contributors()]
             return {
@@ -227,7 +231,7 @@ class DevOracle:
                 return self._get_single_repo_data(org_then_slash_then_repo, year_count)
             raise e
 
-    def _get_weekly_commits(self, pat, org_then_slash_then_repo, year_count):
+    def _get_weekly_commits(self, pat, org_then_slash_then_repo, year_count) -> List[Dict]:
         weekly_commits = []
         date_until = datetime.datetime.now()
         WEEKS_PER_YEAR = 52
@@ -267,7 +271,11 @@ class DevOracle:
                 page += 1
 
             # Update the total weekly commits count
-            weekly_commits.insert(0, curr_week_commits_count)
+            weekly_commits.insert(0, {
+                'start_date': date_since_formatted,
+                'end_date': date_until_formatted,
+                'commits': curr_week_commits_count
+            })
 
             # Set date_until to a day before the last computed week date
             date_until = date_until - datetime.timedelta(days=7)
@@ -429,7 +437,7 @@ if __name__ == '__main__':
     if not options.frequency:
         options.frequency = 4
 
-    years_count = int(sys.argv[2]) if sys.argv[2] else 1
+    years_count = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
     do = DevOracle('./output', options.frequency)
     do.get_and_save_full_stats(sys.argv[1], years_count)
