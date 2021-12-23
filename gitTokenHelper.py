@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import datetime
+import os
+
 from github import Github, GithubException
 
 
@@ -31,7 +33,7 @@ class GithubPersonalAccessTokenHelper():
         for (_, token) in enumerate(self.pats):
             gh = Github(token)
             rate_limit = gh.get_rate_limit()
-            if rate_limit.core.remaining > 0 and self.last_sent_token != token:
+            if rate_limit.core.remaining > 100 and self.last_sent_token != token:
                 self.last_sent_token = token
                 return {
                     'token': token
@@ -46,7 +48,7 @@ class GithubPersonalAccessTokenHelper():
                 min_sleep_time_secs = time_delta.total_seconds()
 
         print("All access tokens have been rate limited")
-        print("Min sleep time: ", min_sleep_time_secs)
+        print("Min sleep time: ", min_sleep_time_secs / 60)
         return {
             'token': None,
             'sleep_time_secs': min_sleep_time_secs

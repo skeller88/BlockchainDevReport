@@ -1,0 +1,3 @@
+[submodule "crypto-ecosystems"]
+	path = crypto-ecosystems
+	url = git@github.com:electric-capital/crypto-ecosystems.git
